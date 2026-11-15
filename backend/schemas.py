@@ -1,5 +1,6 @@
 
 from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime
 
 
 # User Registration Schema
@@ -58,3 +59,73 @@ class VenueResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Event Schemas
+
+class EventCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    description: str | None = None
+    category: str | None = None
+    venue_id: int = Field(gt=0)
+    start_at: datetime
+    end_at: datetime
+    ticket_price: int = Field(default=0, ge=0)
+    total_tickets: int = Field(gt=0)
+
+
+class EventResponse(BaseModel):
+    id: int
+    title: str
+    description: str | None
+    category: str | None
+    venue_id: int
+    start_at: datetime
+    end_at: datetime
+    ticket_price: int
+    total_tickets: int
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+
+# Booking Schemas
+
+class BookingCreate(BaseModel):
+    event_id: int = Field(gt=0)
+    quantity: int = Field(gt=0)
+
+
+class BookingResponse(BaseModel):
+    id: int
+    user_id: int
+    event_id: int
+    quantity: int
+    total_amount: int
+    status: str
+    payment_reference: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Ticket Schemas
+
+class TicketResponse(BaseModel):
+    id: int
+    booking_id: int
+    ticket_code: str
+    qr_token: str
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class CheckInRequest(BaseModel):
+    ticket_code: str
+
+
