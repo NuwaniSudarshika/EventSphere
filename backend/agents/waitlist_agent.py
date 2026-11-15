@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func, update
 
 from backend.models import Event, Booking, WaitlistEntry
 from backend.agents.message_bus import (
@@ -20,8 +21,7 @@ class WaitlistAgent:
 
     def handle_message(self, db: Session, message):
 
-        content = message.content
-        action = content.get("action")
+        action = message.content.get("action")
 
         if action == "JOIN":
             return self.join_waitlist(db, message)
@@ -33,10 +33,7 @@ class WaitlistAgent:
             return self.confirm_hold(db, message)
 
         return send_message(
-            db,
-            self.name,
-            message.sender,
-            "REFUSE",
+            db, self.name, message.sender, "REFUSE",
             {"reason": "Unknown waitlist action"},
             message.conversation_id
         )
@@ -53,36 +50,14 @@ class WaitlistAgent:
         event_id = content.get("event_id")
         quantity = content.get("quantity", 1)
 
-        if (
-            not isinstance(user_id, int)
-            or isinstance(user_id, bool)
-            or user_id <= 0
-        ):
+        if not all([
+            isinstance(user_id, int) and not isinstance(user_id, bool) and user_id > 0,
+            isinstance(event_id, int) and not isinstance(event_id, bool) and event_id > 0,
+            isinstance(quantity, int) and not isinstance(quantity, bool) and quantity > 0
+        ]):
             return send_message(
                 db, self.name, message.sender, "REFUSE",
-                {"reason": "Invalid user ID"},
-                message.conversation_id
-            )
-
-        if (
-            not isinstance(event_id, int)
-            or isinstance(event_id, bool)
-            or event_id <= 0
-        ):
-            return send_message(
-                db, self.name, message.sender, "REFUSE",
-                {"reason": "Invalid event ID"},
-                message.conversation_id
-            )
-
-        if (
-            not isinstance(quantity, int)
-            or isinstance(quantity, bool)
-            or quantity <= 0
-        ):
-            return send_message(
-                db, self.name, message.sender, "REFUSE",
-                {"reason": "Invalid ticket quantity"},
+                {"reason": "Invalid user ID, event ID or quantity"},
                 message.conversation_id
             )
 
@@ -95,6 +70,13 @@ class WaitlistAgent:
             return send_message(
                 db, self.name, message.sender, "REFUSE",
                 {"reason": "Event not found or inactive"},
+                message.conversation_id
+            )
+
+        if quantity > event.total_tickets:
+            return send_message(
+                db, self.name, message.sender, "REFUSE",
+                {"reason": "Requested quantity exceeds event capacity"},
                 message.conversation_id
             )
 
@@ -134,7 +116,6 @@ class WaitlistAgent:
 
         except Exception:
             db.rollback()
-
             return send_message(
                 db, self.name, message.sender, "FAILURE",
                 {"reason": "Could not join waitlist"},
@@ -161,11 +142,7 @@ class WaitlistAgent:
 
         event_id = message.content.get("event_id")
 
-        if (
-            not isinstance(event_id, int)
-            or isinstance(event_id, bool)
-            or event_id <= 0
-        ):
+        if not isinstance(event_id, int) or isinstance(event_id, bool) or event_id <= 0:
             return send_message(
                 db, self.name, message.sender, "REFUSE",
                 {"reason": "Invalid event ID"},
@@ -186,15 +163,15 @@ class WaitlistAgent:
 
         now = datetime.utcnow()
 
-        # Expire old offers before calculating availability
-        expired_entries = db.query(WaitlistEntry).filter(
+        # Expire old offers for this event
+        db.query(WaitlistEntry).filter(
             WaitlistEntry.event_id == event_id,
             WaitlistEntry.status == "offered",
             WaitlistEntry.hold_expires_at <= now
-        ).all()
-
-        for expired in expired_entries:
-            expired.status = "expired"
+        ).update(
+            {"status": "expired"},
+            synchronize_session=False
+        )
 
         try:
             db.commit()
@@ -206,22 +183,20 @@ class WaitlistAgent:
                 message.conversation_id
             )
 
-        # Count confirmed bookings
-        bookings = db.query(Booking).filter(
+        booked_count = db.query(
+            func.coalesce(func.sum(Booking.quantity), 0)
+        ).filter(
             Booking.event_id == event_id,
             Booking.status == "confirmed"
-        ).all()
+        ).scalar()
 
-        booked_count = sum(b.quantity for b in bookings)
-
-        # Count tickets already held by other waitlist offers
-        active_offers = db.query(WaitlistEntry).filter(
+        held_count = db.query(
+            func.coalesce(func.sum(WaitlistEntry.quantity), 0)
+        ).filter(
             WaitlistEntry.event_id == event_id,
             WaitlistEntry.status == "offered",
             WaitlistEntry.hold_expires_at > now
-        ).all()
-
-        held_count = sum(entry.quantity for entry in active_offers)
+        ).scalar()
 
         available = event.total_tickets - booked_count - held_count
 
@@ -232,7 +207,7 @@ class WaitlistAgent:
                 message.conversation_id
             )
 
-        # Select the earliest waiting customer
+        # Select the oldest waiting entry
         entry = db.query(WaitlistEntry).filter(
             WaitlistEntry.event_id == event_id,
             WaitlistEntry.status == "waiting"
@@ -252,22 +227,38 @@ class WaitlistAgent:
             return send_message(
                 db, self.name, message.sender, "REFUSE",
                 {
-                    "reason": "Available tickets are insufficient for the first waitlist entry",
+                    "reason": "Insufficient available tickets for the first waitlist entry",
                     "available_tickets": available,
                     "requested_tickets": entry.quantity
                 },
                 message.conversation_id
             )
 
-        # Create temporary ticket hold
-        entry.status = "offered"
-        entry.hold_expires_at = (
-            now + timedelta(minutes=self.hold_minutes)
-        )
+        expires_at = now + timedelta(minutes=self.hold_minutes)
 
         try:
+            result = db.execute(
+                update(WaitlistEntry)
+                .where(
+                    WaitlistEntry.id == entry.id,
+                    WaitlistEntry.status == "waiting"
+                )
+                .values(
+                    status="offered",
+                    hold_expires_at=expires_at
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+            if result.rowcount != 1:
+                db.rollback()
+                return send_message(
+                    db, self.name, message.sender, "REFUSE",
+                    {"reason": "Waitlist entry is no longer available"},
+                    message.conversation_id
+                )
+
             db.commit()
-            db.refresh(entry)
 
             save_agent_state(
                 db,
@@ -281,7 +272,6 @@ class WaitlistAgent:
 
         except Exception:
             db.rollback()
-
             return send_message(
                 db, self.name, message.sender, "FAILURE",
                 {"reason": "Could not create ticket hold"},
@@ -294,11 +284,10 @@ class WaitlistAgent:
             "user_id": entry.user_id,
             "event_id": event_id,
             "quantity": entry.quantity,
-            "expires_at": entry.hold_expires_at.isoformat(),
+            "expires_at": expires_at.isoformat(),
             "hold_minutes": self.hold_minutes
         }
 
-        # Notify NotificationAgent through JSON message
         send_message(
             db,
             self.name,
@@ -308,18 +297,14 @@ class WaitlistAgent:
             message.conversation_id
         )
 
-        # Inform the original requester
         return send_message(
-            db,
-            self.name,
-            message.sender,
-            "INFORM",
+            db, self.name, message.sender, "INFORM",
             {
                 "waitlist_id": entry.id,
                 "status": "offered",
                 "user_id": entry.user_id,
                 "quantity": entry.quantity,
-                "expires_at": entry.hold_expires_at.isoformat(),
+                "expires_at": expires_at.isoformat(),
                 "message": "Tickets temporarily offered to the next waitlist customer"
             },
             message.conversation_id
@@ -334,11 +319,7 @@ class WaitlistAgent:
         waitlist_id = message.content.get("waitlist_id")
         requested_user_id = message.content.get("user_id")
 
-        if (
-            not isinstance(waitlist_id, int)
-            or isinstance(waitlist_id, bool)
-            or waitlist_id <= 0
-        ):
+        if not isinstance(waitlist_id, int) or isinstance(waitlist_id, bool) or waitlist_id <= 0:
             return send_message(
                 db, self.name, message.sender, "REFUSE",
                 {"reason": "Invalid waitlist ID"},
@@ -357,37 +338,24 @@ class WaitlistAgent:
                 message.conversation_id
             )
 
-        if (
-            requested_user_id is not None
-            and requested_user_id != entry.user_id
-        ):
+        if requested_user_id is not None and requested_user_id != entry.user_id:
             return send_message(
                 db, self.name, message.sender, "REFUSE",
                 {"reason": "Waitlist user mismatch"},
                 message.conversation_id
             )
 
-        if (
-            entry.hold_expires_at is None
-            or entry.hold_expires_at <= datetime.utcnow()
-        ):
-            entry.status = "expired"
+        now = datetime.utcnow()
 
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
+        if entry.hold_expires_at is None or entry.hold_expires_at <= now:
+            entry.status = "expired"
+            db.commit()
 
             return send_message(
                 db, self.name, message.sender, "REFUSE",
                 {"reason": "Ticket offer has expired"},
                 message.conversation_id
             )
-
-        # Create booking for accepted waitlist offer
-        payment_reference = (
-            "SIM-" + uuid.uuid4().hex[:12].upper()
-        )
 
         event = db.query(Event).filter(
             Event.id == entry.event_id,
@@ -401,35 +369,81 @@ class WaitlistAgent:
                 message.conversation_id
             )
 
-        booking = Booking(
-            user_id=entry.user_id,
-            event_id=entry.event_id,
-            quantity=entry.quantity,
-            total_amount=event.ticket_price * entry.quantity,
-            status="confirmed",
-            payment_reference=payment_reference
-        )
+        booked_count = db.query(
+            func.coalesce(func.sum(Booking.quantity), 0)
+        ).filter(
+            Booking.event_id == entry.event_id,
+            Booking.status == "confirmed"
+        ).scalar()
+
+        other_holds = db.query(
+            func.coalesce(func.sum(WaitlistEntry.quantity), 0)
+        ).filter(
+            WaitlistEntry.event_id == entry.event_id,
+            WaitlistEntry.status == "offered",
+            WaitlistEntry.id != entry.id,
+            WaitlistEntry.hold_expires_at > now
+        ).scalar()
+
+        if booked_count + other_holds + entry.quantity > event.total_tickets:
+            return send_message(
+                db, self.name, message.sender, "REFUSE",
+                {"reason": "Ticket availability changed. Offer cannot be confirmed"},
+                message.conversation_id
+            )
 
         try:
+            # Atomically accept only an active, unexpired offer
+            result = db.execute(
+                update(WaitlistEntry)
+                .where(
+                    WaitlistEntry.id == entry.id,
+                    WaitlistEntry.status == "offered",
+                    WaitlistEntry.hold_expires_at > now
+                )
+                .values(status="accepted")
+                .execution_options(synchronize_session=False)
+            )
+
+            if result.rowcount != 1:
+                db.rollback()
+                return send_message(
+                    db, self.name, message.sender, "REFUSE",
+                    {"reason": "Offer already accepted or expired"},
+                    message.conversation_id
+                )
+
+            booking = Booking(
+                user_id=entry.user_id,
+                event_id=entry.event_id,
+                quantity=entry.quantity,
+                total_amount=event.ticket_price * entry.quantity,
+                status="confirmed",
+                payment_reference="SIM-" + uuid.uuid4().hex[:12].upper()
+            )
+
             db.add(booking)
-            entry.status = "accepted"
+            db.flush()
+
+            booking_id = booking.id
+            user_id = entry.user_id
+            event_id = entry.event_id
+            quantity = entry.quantity
 
             db.commit()
-            db.refresh(booking)
 
             save_agent_state(
                 db,
                 self.name,
                 {
                     "last_accepted_waitlist_id": entry.id,
-                    "last_booking_id": booking.id,
+                    "last_booking_id": booking_id,
                     "last_action": "CONFIRM"
                 }
             )
 
         except Exception:
             db.rollback()
-
             return send_message(
                 db, self.name, message.sender, "FAILURE",
                 {"reason": "Could not confirm waitlist booking"},
@@ -443,10 +457,11 @@ class WaitlistAgent:
             "TicketAgent",
             "REQUEST",
             {
-                "booking_id": booking.id,
-                "user_id": entry.user_id,
-                "event_id": entry.event_id,
-                "quantity": entry.quantity
+                "action": "GENERATE_TICKETS",
+                "booking_id": booking_id,
+                "user_id": user_id,
+                "event_id": event_id,
+                "quantity": quantity
             },
             message.conversation_id
         )
@@ -460,9 +475,9 @@ class WaitlistAgent:
             {
                 "action": "WAITLIST_CONFIRMED",
                 "waitlist_id": entry.id,
-                "booking_id": booking.id,
-                "user_id": entry.user_id,
-                "event_id": entry.event_id
+                "booking_id": booking_id,
+                "user_id": user_id,
+                "event_id": event_id
             },
             message.conversation_id
         )
@@ -471,9 +486,8 @@ class WaitlistAgent:
             db, self.name, message.sender, "INFORM",
             {
                 "waitlist_id": entry.id,
-                "booking_id": booking.id,
+                "booking_id": booking_id,
                 "status": "accepted",
-                "payment_reference": payment_reference,
                 "message": "Waitlist offer accepted and booking confirmed"
             },
             message.conversation_id

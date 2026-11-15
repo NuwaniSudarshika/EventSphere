@@ -1,0 +1,490 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EventSphere | Discover Events</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #5145e5;
+            --dark: #17172b;
+            --light: #f6f7fb;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--light);
+            color: var(--dark);
+        }
+
+        .navbar { background: white; }
+
+        .brand {
+            color: var(--primary);
+            font-weight: 800;
+            font-size: 25px;
+        }
+
+        .nav-link {
+            font-weight: 500;
+            color: #444 !important;
+        }
+
+        .btn-primary-custom {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 11px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .btn-primary-custom:hover {
+            background: #3d32c4;
+            color: white;
+        }
+
+        .hero {
+            background: linear-gradient(120deg, #201b55, #5145e5);
+            color: white;
+            padding: 95px 20px;
+        }
+
+        .hero h1 {
+            font-size: clamp(36px, 5vw, 58px);
+            font-weight: 800;
+        }
+
+        .hero p {
+            color: #e1e0ff;
+            font-size: 18px;
+            max-width: 600px;
+        }
+
+        .search-box {
+            background: white;
+            padding: 18px;
+            border-radius: 12px;
+            margin-top: 30px;
+            max-width: 750px;
+        }
+
+        .section-title {
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+
+        .event-card {
+            background: white;
+            border: none;
+            border-radius: 14px;
+            overflow: hidden;
+            height: 100%;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+
+        .event-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .event-image {
+            height: 190px;
+            background: linear-gradient(135deg, #dcd9ff, #aaa2ff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #5145e5;
+            font-size: 55px;
+        }
+
+        .category-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px 15px;
+            text-align: center;
+            height: 100%;
+            transition: transform 0.2s;
+        }
+
+        .category-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .category-card i {
+            font-size: 30px;
+            color: var(--primary);
+        }
+
+        .hire-section {
+            background: #ecebff;
+            border-radius: 18px;
+            padding: 45px 30px;
+        }
+
+        .quick-link {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        footer {
+            background: #17172b;
+            color: #ddd;
+            padding: 35px 0;
+        }
+
+        footer a {
+            color: #ddd;
+            text-decoration: none;
+        }
+
+        @media (max-width: 768px) {
+            .hero { padding: 65px 20px; }
+            .search-box { padding: 12px; }
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- Navigation -->
+<nav class="navbar navbar-expand-lg shadow-sm sticky-top">
+    <div class="container">
+
+        <a class="navbar-brand brand" href="/">
+            <i class="bi bi-globe2"></i> EventSphere
+        </a>
+
+        <button class="navbar-toggler" type="button"
+                data-bs-toggle="collapse" data-bs-target="#navbarMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarMenu">
+            <ul class="navbar-nav ms-auto align-items-lg-center">
+
+                <li class="nav-item">
+                    <a class="nav-link" href="/">Home</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link" href="/browse-events">Events</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link" href="#categories">Categories</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link" href="/venue-hire">Venue Hire</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link" href="/my-bookings">My Bookings</a>
+                </li>
+
+                <li class="nav-item ms-lg-3 mt-2 mt-lg-0">
+                    <a href="/docs" class="btn btn-outline-primary">
+                        API Docs
+                    </a>
+                </li>
+
+                <li class="nav-item ms-lg-2 mt-2 mt-lg-0">
+                    <a href="/login" class="btn btn-primary-custom">
+                        Login / Register
+                    </a>
+                </li>
+
+            </ul>
+        </div>
+    </div>
+</nav>
+
+
+<!-- Hero Section -->
+<section class="hero">
+    <div class="container">
+
+        <h1>
+            Discover Events.<br>
+            Create Experiences.
+        </h1>
+
+        <p class="mt-3">
+            Explore exciting events, book your tickets,
+            and find the perfect venue for your special occasions
+            with EventSphere.
+        </p>
+
+        <div class="search-box">
+            <form action="/browse-events" method="get">
+                <div class="row g-2">
+
+                    <div class="col-md-9">
+                        <input type="text" name="search"
+                               class="form-control form-control-lg"
+                               placeholder="Search for events...">
+                    </div>
+
+                    <div class="col-md-3">
+                        <button type="submit"
+                                class="btn btn-primary-custom btn-lg w-100">
+                            <i class="bi bi-search"></i> Search
+                        </button>
+                    </div>
+
+                </div>
+            </form>
+        </div>
+
+        <div class="mt-4">
+            <a href="/browse-events" class="btn btn-light btn-lg">
+                Explore All Events <i class="bi bi-arrow-right"></i>
+            </a>
+        </div>
+
+    </div>
+</section>
+
+
+<!-- Categories -->
+<section class="container py-5" id="categories">
+
+    <div class="text-center mb-4">
+        <h2 class="section-title">Explore Categories</h2>
+        <p class="text-muted">Find events that match your interests</p>
+    </div>
+
+    <div class="row g-3">
+
+        <div class="col-6 col-md-3">
+            <a href="/browse-events?category=Music" class="quick-link">
+                <div class="category-card">
+                    <i class="bi bi-music-note-beamed"></i>
+                    <h6 class="mt-3">Music</h6>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-6 col-md-3">
+            <a href="/browse-events?category=Education" class="quick-link">
+                <div class="category-card">
+                    <i class="bi bi-mortarboard"></i>
+                    <h6 class="mt-3">Education</h6>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-6 col-md-3">
+            <a href="/browse-events?category=Business" class="quick-link">
+                <div class="category-card">
+                    <i class="bi bi-briefcase"></i>
+                    <h6 class="mt-3">Business</h6>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-6 col-md-3">
+            <a href="/browse-events?category=Sports" class="quick-link">
+                <div class="category-card">
+                    <i class="bi bi-trophy"></i>
+                    <h6 class="mt-3">Sports</h6>
+                </div>
+            </a>
+        </div>
+
+    </div>
+</section>
+
+
+<!-- Events -->
+<section class="container py-5" id="events">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="section-title">Discover Events</h2>
+            <p class="text-muted mb-0">Find your next experience</p>
+        </div>
+
+        <a href="/browse-events" class="btn btn-outline-primary">
+            View All Events
+        </a>
+    </div>
+
+    <div class="row g-4">
+
+        <div class="col-md-4">
+            <div class="card event-card">
+                <div class="event-image">
+                    <i class="bi bi-music-note-list"></i>
+                </div>
+                <div class="card-body">
+                    <span class="badge text-bg-primary">Music</span>
+                    <h5 class="mt-3">Music Events</h5>
+                    <p class="text-muted">
+                        Discover upcoming music events and live performances.
+                    </p>
+                    <a href="/browse-events" class="btn btn-primary-custom">
+                        Explore Events
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card event-card">
+                <div class="event-image">
+                    <i class="bi bi-mortarboard"></i>
+                </div>
+                <div class="card-body">
+                    <span class="badge text-bg-success">Education</span>
+                    <h5 class="mt-3">Educational Events</h5>
+                    <p class="text-muted">
+                        Explore workshops, seminars and learning opportunities.
+                    </p>
+                    <a href="/browse-events" class="btn btn-primary-custom">
+                        Explore Events
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card event-card">
+                <div class="event-image">
+                    <i class="bi bi-people"></i>
+                </div>
+                <div class="card-body">
+                    <span class="badge text-bg-warning">Business</span>
+                    <h5 class="mt-3">Business Events</h5>
+                    <p class="text-muted">
+                        Connect with professionals and explore business events.
+                    </p>
+                    <a href="/browse-events" class="btn btn-primary-custom">
+                        Explore Events
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+
+<!-- Venue Hire -->
+<section class="container py-5" id="venue">
+    <div class="hire-section">
+
+        <div class="row align-items-center">
+
+            <div class="col-md-8">
+                <h2 class="section-title">
+                    Looking for the Perfect Venue?
+                </h2>
+
+                <p class="text-muted">
+                    Find a suitable venue for weddings, meetings,
+                    private parties and special occasions.
+                </p>
+            </div>
+
+            <div class="col-md-4 text-md-end">
+                <a href="/venue-hire" class="btn btn-primary-custom">
+                    <i class="bi bi-building"></i> Book a Venue
+                </a>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+
+<!-- User Services -->
+<section class="container pb-5">
+    <div class="row g-3">
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <i class="bi bi-ticket-perforated fs-2 text-primary"></i>
+                <h5 class="mt-3">My Bookings</h5>
+                <p class="text-muted">
+                    View your bookings and manage cancellations.
+                </p>
+                <a href="/my-bookings" class="btn btn-outline-primary">
+                    View Bookings
+                </a>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <i class="bi bi-qr-code fs-2 text-primary"></i>
+                <h5 class="mt-3">Digital Tickets</h5>
+                <p class="text-muted">
+                    Access your generated event tickets and QR codes.
+                </p>
+                <a href="/docs" class="btn btn-outline-primary">
+                    Ticket API
+                </a>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <i class="bi bi-robot fs-2 text-primary"></i>
+                <h5 class="mt-3">Multi-Agent System</h5>
+                <p class="text-muted">
+                    EventSphere uses intelligent agents to manage bookings,
+                    venues, tickets and notifications.
+                </p>
+                <a href="/docs" class="btn btn-outline-primary">
+                    Explore API
+                </a>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+
+<!-- Footer -->
+<footer>
+    <div class="container">
+        <div class="row">
+
+            <div class="col-md-6">
+                <h4 class="text-white">
+                    <i class="bi bi-globe2"></i> EventSphere
+                </h4>
+                <p>
+                    Discover events and create memorable experiences.
+                </p>
+            </div>
+
+            <div class="col-md-6 text-md-end">
+                <p>
+                    <a href="/">Home</a> |
+                    <a href="/browse-events">Events</a> |
+                    <a href="/venue-hire">Venue Hire</a> |
+                    <a href="/docs">API Docs</a>
+                </p>
+
+                <p class="small">
+                    &copy; 2026 EventSphere. All rights reserved.
+                </p>
+            </div>
+
+        </div>
+    </div>
+</footer>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>

@@ -18,26 +18,29 @@ class TicketAgent:
 
     def handle_message(self, db: Session, message):
 
-        content = message.content
+        content = message.content or {}
 
-        # 1. Get booking ID
+        # 1. Validate action
+        action = content.get("action")
+
+        if action not in (None, "GENERATE_TICKETS"):
+            return send_message(
+                db, self.name, message.sender, "REFUSE",
+                {"reason": "Unknown ticket action"},
+                message.conversation_id
+            )
+
+        # 2. Validate booking ID
         booking_id = content.get("booking_id")
 
-        if (
-            not isinstance(booking_id, int)
-            or isinstance(booking_id, bool)
-            or booking_id <= 0
-        ):
+        if not isinstance(booking_id, int) or isinstance(booking_id, bool) or booking_id <= 0:
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "REFUSE",
+                db, self.name, message.sender, "REFUSE",
                 {"reason": "Invalid booking ID"},
                 message.conversation_id
             )
 
-        # 2. Find confirmed booking
+        # 3. Find confirmed booking
         booking = db.query(Booking).filter(
             Booking.id == booking_id,
             Booking.status == "confirmed"
@@ -45,69 +48,45 @@ class TicketAgent:
 
         if not booking:
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "REFUSE",
+                db, self.name, message.sender, "REFUSE",
                 {"reason": "Valid confirmed booking not found"},
                 message.conversation_id
             )
 
-        # 3. Validate request details if provided
+        # 4. Validate optional booking details
         requested_user_id = content.get("user_id")
         requested_event_id = content.get("event_id")
         requested_quantity = content.get("quantity")
 
-        if (
-            requested_user_id is not None
-            and requested_user_id != booking.user_id
-        ):
+        if requested_user_id is not None and requested_user_id != booking.user_id:
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "REFUSE",
+                db, self.name, message.sender, "REFUSE",
                 {"reason": "Booking user mismatch"},
                 message.conversation_id
             )
 
-        if (
-            requested_event_id is not None
-            and requested_event_id != booking.event_id
-        ):
+        if requested_event_id is not None and requested_event_id != booking.event_id:
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "REFUSE",
+                db, self.name, message.sender, "REFUSE",
                 {"reason": "Booking event mismatch"},
                 message.conversation_id
             )
 
-        if (
-            requested_quantity is not None
-            and requested_quantity != booking.quantity
-        ):
+        if requested_quantity is not None and requested_quantity != booking.quantity:
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "REFUSE",
+                db, self.name, message.sender, "REFUSE",
                 {"reason": "Booking quantity mismatch"},
                 message.conversation_id
             )
 
-        # 4. Check whether tickets already exist
+        # 5. Prevent duplicate ticket generation
         existing_tickets = db.query(Ticket).filter(
             Ticket.booking_id == booking.id
         ).count()
 
         if existing_tickets > 0:
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "REFUSE",
+                db, self.name, message.sender, "REFUSE",
                 {
                     "reason": "Tickets already generated",
                     "existing_ticket_count": existing_tickets
@@ -118,7 +97,7 @@ class TicketAgent:
         generated_tickets = []
 
         try:
-            # 5. Generate one unique ticket for each seat
+            # 6. Generate unique ticket codes and QR tokens
             for _ in range(booking.quantity):
 
                 ticket_code = "TKT-" + secrets.token_urlsafe(16)
@@ -138,10 +117,10 @@ class TicketAgent:
                     "qr_token": qr_token
                 })
 
-            # 6. Save all tickets
+            # 7. Commit tickets
             db.commit()
 
-            # 7. Save TicketAgent state
+            # 8. Save agent state
             save_agent_state(
                 db,
                 self.name,
@@ -157,15 +136,12 @@ class TicketAgent:
             db.rollback()
 
             return send_message(
-                db,
-                self.name,
-                message.sender,
-                "FAILURE",
+                db, self.name, message.sender, "FAILURE",
                 {"reason": "Ticket generation failed"},
                 message.conversation_id
             )
 
-        # 8. Inform the requesting agent
+        # 9. Inform requesting agent
         return send_message(
             db,
             self.name,

@@ -1,0 +1,93 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My Bookings - EventSphere</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f7f5ff; }
+        .navbar { background: #5b3cc4; }
+        .booking-card { border: 0; border-radius: 14px; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">EventSphere</a>
+        <a href="/browse-events" class="btn btn-light btn-sm">Browse Events</a>
+    </div>
+</nav>
+
+<div class="container py-5">
+    <h2 class="fw-bold">My Bookings</h2>
+    <p class="text-muted">View and manage your event bookings.</p>
+    <div id="message"></div>
+    <div id="bookingList" class="row g-3"></div>
+</div>
+
+<script>
+async function loadBookings() {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+        location.href = "/login";
+        return;
+    }
+
+    const response = await fetch("/bookings/my-bookings", {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    const data = await response.json();
+    const list = document.getElementById("bookingList");
+
+    if (!response.ok) {
+        list.innerHTML = "<p>Unable to load bookings.</p>";
+        return;
+    }
+
+    if (!data.length) {
+        list.innerHTML = "<p>No bookings found.</p>";
+        return;
+    }
+
+    list.innerHTML = data.map(b => `
+        <div class="col-md-6">
+            <div class="card booking-card shadow-sm p-3">
+                <h5>Booking #${b.id}</h5>
+                <p>Event ID: ${b.event_id}</p>
+                <p>Tickets: ${b.quantity}</p>
+                <p>Total: ${b.total_amount}</p>
+                <p>Status: <strong>${b.status}</strong></p>
+                <p>Payment: ${b.payment_reference || "N/A"}</p>
+                ${b.status === "confirmed" ?
+                    `<button class="btn btn-danger btn-sm"
+                    onclick="cancelBooking(${b.id})">Cancel Booking</button>` : ""}
+            </div>
+        </div>
+    `).join("");
+}
+
+async function cancelBooking(id) {
+    if (!confirm("Are you sure you want to cancel this booking?")) return;
+
+    const token = localStorage.getItem("access_token");
+    const response = await fetch(`/bookings/cancel/${id}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    const result = await response.json();
+    document.getElementById("message").innerHTML =
+        `<div class="alert ${response.ok ? "alert-success" : "alert-danger"}">
+        ${result.message || result.detail}
+        </div>`;
+
+    if (response.ok) loadBookings();
+}
+
+loadBookings();
+</script>
+</body>
+</html>
